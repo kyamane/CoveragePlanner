@@ -1,3 +1,6 @@
+#include <algorithm>  // std::min
+#include <cmath> // std::ceil
+
 #include "coverage_planner.h"
 
 #define DENSE_PATH
@@ -131,25 +134,26 @@ int main(){
 //    polygon_coverage_planning::computeBestTCDFromPolygonWithHoles(pwh, &bcd_cells);
     polygon_coverage_planning::computeBestBCDFromPolygonWithHoles(pwh, &bcd_cells);
 
+    std::cout << "number of cells: " << bcd_cells.size() << std::endl;
     // test decomposition
-//    std::vector<std::vector<cv::Point>> bcd_polys;
-//    std::vector<cv::Point> bcd_poly;
-//
-//    for(const auto& cell:bcd_cells){
-//        for(int i = 0; i < cell.size(); i++){
-//            bcd_poly.emplace_back(cv::Point(CGAL::to_double(cell[i].x()), CGAL::to_double(cell[i].y())));
-//        }
-//        bcd_polys.emplace_back(bcd_poly);
-//        bcd_poly.clear();
-//    }
+    // std::vector<std::vector<cv::Point>> bcd_polys;
+    // std::vector<cv::Point> bcd_poly;
 
-//    for(int i = 0; i < bcd_polys.size(); i++){
-//        cv::drawContours(poly_img, bcd_polys, i, cv::Scalar(255,0,255));
-//        cv::imshow("bcd", poly_img);
-//        cv::waitKey();
-//    }
-//    cv::imshow("bcd", poly_img);
-//    cv::waitKey();
+    // for(const auto& cell:bcd_cells){
+    //     for(int i = 0; i < cell.size(); i++){
+    //         bcd_poly.emplace_back(cv::Point(CGAL::to_double(cell[i].x()), CGAL::to_double(cell[i].y())));
+    //     }
+    //     bcd_polys.emplace_back(bcd_poly);
+    //     bcd_poly.clear();
+    // }
+
+    // for(int i = 0; i < bcd_polys.size(); i++){
+    //     cv::drawContours(poly_img, bcd_polys, i, cv::Scalar(255,0,255));
+    //     cv::imshow("bcd", poly_img);
+    //     cv::waitKey(100);
+    // }
+    // cv::imshow("bcd", poly_img);
+    // cv::waitKey(100);
 
 
     // construct adjacent graph
@@ -181,12 +185,14 @@ int main(){
 
     Point_2 start = getStartingPoint(img);
     int starting_cell_idx = getCellIndexOfPoint(bcd_cells, start);
+    std::cout << "starting cell: " << starting_cell_idx << std::endl;
     auto cell_idx_path = getTravellingPath(cell_graph, starting_cell_idx);
     std::cout<<"path length: "<<cell_idx_path.size()<<std::endl;
     std::cout<<"start";
     for(auto& cell_idx:cell_idx_path){
         std::cout<<"->"<<cell_idx;
     }
+    std::cout << std::endl;
 
     int sweep_step = 5;
 
@@ -204,20 +210,20 @@ int main(){
         cells_sweeps.emplace_back(cell_sweep);
     }
 
-//    cv::Point prev, curr;
-//    cv::Mat poly_img_ = poly_img.clone();
-//    for(size_t i = 0; i < cells_sweeps.size(); ++i){
-//        for(size_t j = 1; j < cells_sweeps[i].size(); ++j){
-//            prev = cv::Point(CGAL::to_double(cells_sweeps[i][j-1].x()),CGAL::to_double(cells_sweeps[i][j-1].y()));
-//            curr = cv::Point(CGAL::to_double(cells_sweeps[i][j].x()),CGAL::to_double(cells_sweeps[i][j].y()));
-//            cv::line(poly_img_, prev, curr, cv::Scalar(0, 0, 255));
-//            cv::namedWindow("way",cv::WINDOW_NORMAL);
-//            cv::imshow("way", poly_img_);
-//            cv::waitKey(0);
-//        }
-//        poly_img_ = poly_img.clone();
-//    }
-//    cv::waitKey(0);
+    // cv::Point prev, curr;
+    // cv::Mat poly_img_ = poly_img.clone();
+    // for(size_t i = 0; i < cells_sweeps.size(); ++i){
+    //     for(size_t j = 1; j < cells_sweeps[i].size(); ++j){
+    //         prev = cv::Point(CGAL::to_double(cells_sweeps[i][j-1].x()),CGAL::to_double(cells_sweeps[i][j-1].y()));
+    //         curr = cv::Point(CGAL::to_double(cells_sweeps[i][j].x()),CGAL::to_double(cells_sweeps[i][j].y()));
+    //         cv::line(poly_img_, prev, curr, cv::Scalar(0, 0, 255));
+    //         cv::namedWindow("way",cv::WINDOW_NORMAL);
+    //         cv::imshow("way", poly_img_);
+    //         cv::waitKey(100);
+    //     }
+    //     poly_img_ = poly_img.clone();
+    // }
+    // cv::waitKey(0);
 
 
 //    for(int i = 0; i < cell_path.size(); i++){
@@ -324,16 +330,49 @@ int main(){
     cv::namedWindow("cover",cv::WINDOW_NORMAL);
     cv::imshow("cover", img);
     cv::waitKey();
+    double total_dist = 0.0;  // total traveling distance
+    double total_rot = 0.0;   // total rotation angle (assuming that the robot turns in place at every waypoint)
+    double cur_heading = 0.0; // initial heading
+    double lin_speed = 5.0;   // pixels / s
+    double ang_speed = 0.5;   // radians / s
+    const double PI = 3.1416;
+    std::vector<cv::Point> step_points;  // points at constant time intervals
     for(size_t i = 1; i < way_points.size(); ++i){
         p1 = cv::Point(CGAL::to_double(way_points[i-1].x()),CGAL::to_double(way_points[i-1].y()));
         p2 = cv::Point(CGAL::to_double(way_points[i].x()),CGAL::to_double(way_points[i].y()));
+        double dx = p1.x - p2.x;
+        double dy = p1.y - p2.y;
+        double my_dist = sqrt(dx * dx + dy * dy);
+        double my_heading = atan2(dy, dx);
+        double my_rot = std::min(fabs(my_heading - cur_heading), PI);
+        total_dist += my_dist;
+        total_rot += my_rot;
+        cur_heading = my_heading;
+        // compute the number of timesteps required for turning in place at
+        // way_points[i-1] and move to way_points[i]
+        int time_rot = (int)std::ceil(my_rot / ang_speed);
+        int time_trans = (int)std::ceil(my_dist / lin_speed);
+        // add points along the trajectory (same point while turning in place)
+        for (int m = 0; m < time_rot; ++m)
+        {
+            step_points.push_back(p1);
+            cv::circle(img, p1, 1 + m, cv::Scalar(0, 0, 200), 1);
+        }
+        for (int m = 0; m < time_trans; ++m)
+        {
+            double ratio = (double)(m + 1) / (double)time_trans;
+            cv::Point pm = cv::Point(p1.x * (1.0 - ratio) + p2.x * ratio, p1.y * (1.0 - ratio) + p2.y * ratio);
+            step_points.push_back(pm);
+            cv::circle(img, pm, 2, cv::Scalar(0, 0, 200), 1);
+        }
         cv::line(img, p1, p2, cv::Scalar(0, 64, 255));
         cv::namedWindow("cover",cv::WINDOW_NORMAL);
         cv::imshow("cover", img);
-//        cv::waitKey(50);
+        cv::waitKey(1);
         cv::line(img, p1, p2, cv::Scalar(200, 200, 200));
     }
-    cv::waitKey(1000);
+    std::cout << "number of waypoints: " << way_points.size() << ", total distance: " << total_dist << ", total rotation: " << total_rot << std::endl;
+    cv::waitKey();
 #else
 
     cv::Point p1, p2;
